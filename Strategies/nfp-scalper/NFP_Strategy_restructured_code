@@ -1,0 +1,96 @@
+"""
+There are a few syntax errors in the code:
+
+There is an indentation issue in the for loop inside the if statement that checks for open positions. The loop should be indented inside the if statement, but it is not.
+The condition for the if statements that check the NFP data is incomplete. There is no actual comparison being made, and the condition just says "if (nfp actual vs est)". This will cause a syntax error when you try to run the code.
+There is a missing closing parenthesis at the end of the if statement that checks the NFP data for the "sell" condition. This will also cause a syntax error when you try to run the code."""
+
+import time
+import pandas as pd
+import talib as ta
+from utils.Pytrader_API_V1_06a import Pytrader_API
+from utils.LogHelper import Logger
+
+# Initialize logger
+log = Logger()
+log.configure()
+
+# Define settings
+timeframe = 'M1'
+instrument = 'EURUSD'
+server_IP = '127.0.0.1'
+server_port = 1110
+SL_in_pips = 20
+TP_in_pips = 10
+volume = 0.01
+slippage = 5
+magicnumber = 1000
+multiplier = 10000 if 'JPY' not in instrument else 100.0
+sma_period_1 = 9
+sma_period_2 = 16
+date_value_last_bar = 0
+number_of_bars = 100
+
+# Create lookup table for demo api instruments
+brokerInstrumentsLookup = {'EURUSD'}
+
+# Define Pytrader API
+MT = Pytrader_API()
+connection = MT.Connect(server_IP, server_port, brokerInstrumentsLookup)
+
+# Check if connected to MT terminal
+if not connection:
+    log.error('Failed to connect to MT terminal')
+    raise ConnectionError('Failed to connect to MT terminal')
+
+log.debug('Strategy started')
+
+# Run strategy in infinite loop
+while True:
+    try:
+        # Retrieve open positions
+        positions_df = MT.Get_all_open_positions()
+
+        # Check for closing positions with defined SL and/or TP using hidden SL/TP
+        actual_bar_info = MT.Get_actual_bar_info(instrument=instrument, timeframe=MT.get_timeframe_value(timeframe))
+        if len(positions_df) > 0:
+            for position in positions_df.itertuples():
+                # Check if SL or TP is defined
+                if position.stop_loss != 0.0 or position.take_profit != 0.0:
+                    close_OK = MT.Close_position_by_ticket(ticket=position.ticket)
+                    if close_OK > 0:
+                        log.debug('Closed position with ticket {} due to SL/TP'.format(position.ticket))
+
+        # Check if a new bar has been formed
+        if actual_bar_info['date'] > date_value_last_bar:
+            date_value_last_bar = actual_bar_info['date']
+
+            # Retrieve last n bars
+            bars = MT.Get_last_x_bars_from_now(instrument=instrument, timeframe=MT.get_timeframe_value(timeframe), nbrofbars=number_of_bars)
+
+            # Convert bars to dataframe
+            df = pd.DataFrame(bars)
+            df.rename(columns={'tick_volume': 'volume'}, inplace=True)
+            df['date'] = pd.to_datetime(df['date'], unit='s')
+
+            # Check NFP result vs forecast for trading decisions
+            nfp_actual =  # Insert code to retrieve actual NFP value from an external source
+            nfp_forecast =  # Insert code to retrieve forecast NFP value from an external source
+
+            if nfp_actual > 215000:
+                # Sell condition
+                sell_OK = MT.Open_order(instrument=instrument,
+                                         ordertype='sell',
+                                         volume=volume,
+                                         openprice=0.0,
+                                         slippage=slippage,
+                                         magicnumber=magicnumber,
+                                         stoploss=nfp_actual + SL_in_pips * multiplier,
+                                         takeprofit=nfp_actual - TP_in_pips * multiplier,
+                                         comment='strategy_1')
+                if sell_OK > 0:
+                    log.debug('Sell trade opened')
+
+                    # Close buy positions if any
+                    for position in positions_df.itertuples():
+                        if position.instrument == instrument and
